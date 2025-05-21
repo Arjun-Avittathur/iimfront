@@ -4,44 +4,33 @@ import { DateRangePicker } from 'react-date-range';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import { checkRoomAvailability, saveBooking } from '../services/availabilityService';
+import { TOTAL_ROOMS, PROGRAM_TYPES } from '../constants'; // Import constants
 
 const BookingForm = ({ addToast, onBookingAdded, selectedDates }) => {
-  // Form state
   const [formData, setFormData] = useState({
     programTitle: '',
-    programType: '',
+    programType: '', // Will store 'CTP', 'LDP', 'MDP', or 'OTHERS'
+    otherProgramTypeDescription: '', // For "OTHERS" description
     numberOfRooms: 1,
-    bookingStatus: 'pencil', // Default to pencil booking
-    checkInTime: '14:00', // Default check-in time (2 PM)
-    checkOutTime: '11:00', // Default check-out time (11 AM)
+    bookingStatus: 'pencil', 
+    checkInTime: '14:00',
+    checkOutTime: '11:00',
   });
 
-  // Date range state
   const [dateRange, setDateRange] = useState({
     startDate: new Date(),
-    endDate: new Date(new Date().setDate(new Date().getDate() + 1)), // Default to next day
+    endDate: new Date(new Date().setDate(new Date().getDate() + 1)),
     key: 'selection',
   });
 
-  // Available program types
-  const programTypes = [
-    'Leadership Development Program',
-    'Executive Training',
-    'Team Building Workshop',
-    'Corporate Retreat',
-    'Conference',
-    'Other'
-  ];
+  // Using PROGRAM_TYPES from constants.js
+  // const programTypes = PROGRAM_TYPES; // Already imported
 
-  // Time options
   const timeOptions = generateTimeOptions();
-
-  // Availability check result
   const [availabilityResult, setAvailabilityResult] = useState(null);
   const [isChecking, setIsChecking] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
 
-  // Update date range when selectedDates changes
   useEffect(() => {
     if (selectedDates && selectedDates.startDate && selectedDates.endDate) {
       setDateRange({
@@ -49,405 +38,276 @@ const BookingForm = ({ addToast, onBookingAdded, selectedDates }) => {
         endDate: selectedDates.endDate,
         key: 'selection'
       });
-      
-      // Auto-check availability when dates are selected from calendar
       checkAvailabilityForDates(
-        selectedDates.startDate, 
-        selectedDates.endDate, 
-        formData.numberOfRooms,
-        formData.checkInTime,
-        formData.checkOutTime
+        selectedDates.startDate, selectedDates.endDate, 
+        formData.numberOfRooms, formData.checkInTime, formData.checkOutTime, 
+        formData.bookingStatus 
       );
     }
-  }, [selectedDates]);
+  }, [selectedDates]); 
 
-  // Generate time options in 30-minute intervals
   function generateTimeOptions() {
     const options = [];
     for (let hour = 0; hour < 24; hour++) {
       for (let minute of ['00', '30']) {
-        const hourFormatted = hour.toString().padStart(2, '0');
-        options.push(`${hourFormatted}:${minute}`);
+        options.push(`${String(hour).padStart(2, '0')}:${minute}`);
       }
     }
     return options;
   }
 
-  // Handle input changes
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: name === 'numberOfRooms' ? parseInt(value) : value,
+    setFormData(prev => {
+      const newState = { ...prev, [name]: name === 'numberOfRooms' ? parseInt(value) : value };
+      // If programType is not 'OTHERS', clear the description
+      if (name === 'programType' && value !== 'OTHERS') {
+        newState.otherProgramTypeDescription = '';
+      }
+      return newState;
     });
   };
 
-  // Handle date range selection
-  const handleDateRangeChange = (ranges) => {
-    setDateRange(ranges.selection);
-  };
+  const handleDateRangeChange = (ranges) => { setDateRange(ranges.selection); };
 
-  // Calculate duration in days
   const calculateDuration = () => {
     if (!dateRange.startDate || !dateRange.endDate) return 0;
-    const diffTime = Math.abs(dateRange.endDate - dateRange.startDate);
+    const diffTime = Math.abs(new Date(dateRange.endDate).getTime() - new Date(dateRange.startDate).getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
+    if (diffDays === 0 && dateRange.startDate.toDateString() === dateRange.endDate.toDateString()) {
+        return 1; 
+    }
+    return diffDays > 0 ? diffDays : 1; 
   };
 
-  // Create a datetime by combining date and time
   const combineDateAndTime = (date, timeString) => {
-    const result = new Date(date);
+    const result = new Date(date); 
     const [hours, minutes] = timeString.split(':').map(Number);
     result.setHours(hours, minutes, 0, 0);
     return result;
   };
 
-  // Check availability for specific dates and times
-  const checkAvailabilityForDates = async (startDate, endDate, rooms, checkInTime, checkOutTime) => {
+  const checkAvailabilityForDates = async (startDate, endDate, rooms, checkInTime, checkOutTime, bookingTypeToMake) => {
     setIsChecking(true);
     setAvailabilityResult(null);
-
     try {
-      // Combine dates and times
       const checkInDateTime = combineDateAndTime(startDate, checkInTime);
       const checkOutDateTime = combineDateAndTime(endDate, checkOutTime);
       
-      // Use the availability service to check
-      const result = checkRoomAvailability(
-        checkInDateTime,
-        checkOutDateTime,
-        rooms
-      );
+      const result = await checkRoomAvailability(checkInDateTime, checkOutDateTime, rooms, bookingTypeToMake);
 
-      setAvailabilityResult(result);
-      
+      setAvailabilityResult(result); 
       if (result.available) {
-        addToast('Rooms are available for your selected dates and times!', 'success');
+        addToast(`Rooms are available for your ${bookingTypeToMake} booking!`, 'success');
       } else {
-        addToast(`Sorry, only ${result.availableRooms} rooms available for your selected period.`, 'error');
+        addToast(`Sorry, only ${result.availableRooms} rooms available for your ${bookingTypeToMake} request.`, 'error');
       }
     } catch (error) {
-      addToast('Error checking availability. Please try again.', 'error');
+      addToast(`Error checking availability: ${error.message}`, 'error');
       console.error('Error checking availability:', error);
     } finally {
       setIsChecking(false);
     }
   };
 
-  // Check room availability
-  const checkAvailability = async () => {
+  const handleCheckAvailability = async () => {
     if (!validateForm()) return;
     checkAvailabilityForDates(
-      dateRange.startDate, 
-      dateRange.endDate, 
-      formData.numberOfRooms,
-      formData.checkInTime,
-      formData.checkOutTime
+        dateRange.startDate, dateRange.endDate, 
+        formData.numberOfRooms, formData.checkInTime, formData.checkOutTime,
+        formData.bookingStatus 
     );
   };
 
-  // Book the rooms
-  const bookRooms = async () => {
-    if (!availabilityResult?.available) {
-      addToast('Please check availability first.', 'error');
-      return;
-    }
+  const handleBookRooms = async () => {
+    if (!validateForm()) return; 
 
     setIsBooking(true);
-
     try {
-      // Combine dates and times
-      const checkInDateTime = combineDateAndTime(dateRange.startDate, formData.checkInTime);
-      const checkOutDateTime = combineDateAndTime(dateRange.endDate, formData.checkOutTime);
+        const checkInDateTime = combineDateAndTime(dateRange.startDate, formData.checkInTime);
+        const checkOutDateTime = combineDateAndTime(dateRange.endDate, formData.checkOutTime);
+
+        const finalCheckResult = await checkRoomAvailability(
+            checkInDateTime, checkOutDateTime, formData.numberOfRooms, formData.bookingStatus
+        );
+
+        if (!finalCheckResult.available) {
+            addToast(`Booking failed: Rooms became unavailable. Only ${finalCheckResult.availableRooms} left. Please check again.`, 'error');
+            setAvailabilityResult(finalCheckResult); 
+            setIsBooking(false);
+            return;
+        }
       
-      // Save the booking
-      const booking = saveBooking({
-        ...formData,
+      // Prepare booking data, ensuring otherProgramTypeDescription is included
+      const bookingPayload = {
+        programTitle: formData.programTitle,
+        programType: formData.programType,
+        // Conditionally include otherProgramTypeDescription
+        ...(formData.programType === 'OTHERS' && { otherProgramTypeDescription: formData.otherProgramTypeDescription }),
+        numberOfRooms: formData.numberOfRooms,
+        bookingStatus: formData.bookingStatus,
         startDate: checkInDateTime,
         endDate: checkOutDateTime,
         createdAt: new Date()
-      });
+      };
+      
+      const booking = await saveBooking(bookingPayload);
 
       addToast('Booking successful!', 'success');
-      
-      // Notify parent component about the new booking
-      if (onBookingAdded) {
-        onBookingAdded(booking);
-      }
-      
-      // Reset form after successful booking
+      if (onBookingAdded) onBookingAdded(booking); 
       resetForm();
     } catch (error) {
-      addToast('Error making booking. Please try again.', 'error');
+      addToast(`Error making booking: ${error.message}`, 'error');
       console.error('Error making booking:', error);
     } finally {
       setIsBooking(false);
     }
   };
 
-  // Form validation
   const validateForm = () => {
-    if (!formData.programTitle.trim()) {
-      addToast('Program title is required', 'error');
-      return false;
+    if (!formData.programTitle.trim()) { addToast('Program title is required', 'error'); return false; }
+    if (!formData.programType) { addToast('Please select a program type', 'error'); return false; }
+    // If OTHERS is selected, description must not be empty
+    if (formData.programType === 'OTHERS' && !formData.otherProgramTypeDescription.trim()) {
+        addToast('Please enter a description for "OTHERS" program type.', 'error'); return false;
     }
+    if (formData.numberOfRooms < 1) { addToast('Number of rooms must be at least 1', 'error'); return false; }
+    if (formData.numberOfRooms > TOTAL_ROOMS) { addToast(`Number of rooms cannot exceed ${TOTAL_ROOMS}`, 'error'); return false; } 
     
-    if (!formData.programType) {
-      addToast('Please select a program type', 'error');
-      return false;
+    if (!dateRange.startDate || !dateRange.endDate) {
+        addToast('Please select a valid date range.', 'error');
+        return false;
     }
-    
-    if (formData.numberOfRooms < 1) {
-      addToast('Number of rooms must be at least 1', 'error');
-      return false;
+
+    const checkInDateTime = combineDateAndTime(dateRange.startDate, formData.checkInTime);
+    const checkOutDateTime = combineDateAndTime(dateRange.endDate, formData.checkOutTime);
+    if (checkInDateTime >= checkOutDateTime) { 
+        addToast('Check-out date/time must be after check-in date/time', 'error'); return false; 
     }
-    
-    if (formData.numberOfRooms > 133) {
-      addToast('Number of rooms cannot exceed total capacity (133)', 'error');
-      return false;
-    }
-    
-    if (dateRange.startDate >= dateRange.endDate) {
-      addToast('Check-out date must be after check-in date', 'error');
-      return false;
-    }
-    
-    // Check if check-in and check-out are on the same day but check-out time is before check-in time
-    if (
-      dateRange.startDate.toDateString() === dateRange.endDate.toDateString() &&
-      formData.checkOutTime <= formData.checkInTime
-    ) {
-      addToast('Check-out time must be after check-in time on the same day', 'error');
-      return false;
-    }
-    
     return true;
   };
 
-  // Reset form
   const resetForm = () => {
     setFormData({
-      programTitle: '',
-      programType: '',
-      numberOfRooms: 1,
-      bookingStatus: 'pencil',
-      checkInTime: '14:00',
-      checkOutTime: '11:00',
+      programTitle: '', programType: '', otherProgramTypeDescription: '', 
+      numberOfRooms: 1, bookingStatus: 'pencil', 
+      checkInTime: '14:00', checkOutTime: '11:00',
     });
-    
     setDateRange({
       startDate: new Date(),
       endDate: new Date(new Date().setDate(new Date().getDate() + 1)),
       key: 'selection',
     });
-    
     setAvailabilityResult(null);
   };
 
   return (
     <div className="card">
       <h2 className="summary-title">Program Room Booking</h2>
-      
       <div className="two-column">
-        <div>
+        <div> {/* Left Column */}
           <div className="form-group">
             <label className="form-label">Program Title</label>
-            <input
-              type="text"
-              name="programTitle"
-              value={formData.programTitle}
-              onChange={handleInputChange}
-              className="form-input"
-              placeholder="Enter program title"
-            />
+            <input type="text" name="programTitle" value={formData.programTitle} onChange={handleInputChange} className="form-input" placeholder="Enter program title" />
           </div>
-          
           <div className="form-group">
             <label className="form-label">Program Type</label>
-            <select
-              name="programType"
-              value={formData.programType}
-              onChange={handleInputChange}
-              className="form-select"
-            >
+            <select name="programType" value={formData.programType} onChange={handleInputChange} className="form-select">
               <option value="">Select Program Type</option>
-              {programTypes.map((type, index) => (
-                <option key={index} value={type}>{type}</option>
+              {PROGRAM_TYPES.map((typeOpt) => (
+                <option key={typeOpt.value} value={typeOpt.value}>{typeOpt.label}</option>
               ))}
             </select>
           </div>
-          
+          {/* Conditional input for OTHERS description */}
+          {formData.programType === 'OTHERS' && (
+            <div className="form-group">
+              <label className="form-label">Specify Other Program Type</label>
+              <input 
+                type="text" 
+                name="otherProgramTypeDescription" 
+                value={formData.otherProgramTypeDescription} 
+                onChange={handleInputChange} 
+                className="form-input"
+                placeholder="Enter description for OTHERS"
+              />
+            </div>
+          )}
           <div className="form-group">
             <label className="form-label">Number of Rooms</label>
-            <input
-              type="number"
-              name="numberOfRooms"
-              value={formData.numberOfRooms}
-              onChange={handleInputChange}
-              min="1"
-              max="133"
-              className="form-input"
-            />
-            <p className="form-hint">Total available: 133 rooms</p>
+            <input type="number" name="numberOfRooms" value={formData.numberOfRooms} onChange={handleInputChange} min="1" max={TOTAL_ROOMS} className="form-input" />
+            <p className="form-hint">Total available: {TOTAL_ROOMS} rooms</p>
           </div>
-          
           <div className="form-group">
-            <label className="form-label">Booking Status</label>
+            <label className="form-label">Booking Type</label>
             <div className="radio-group">
               <label className="radio-label">
-                <input
-                  type="radio"
-                  name="bookingStatus"
-                  value="pencil"
-                  checked={formData.bookingStatus === 'pencil'}
-                  onChange={handleInputChange}
-                  className="radio-input"
-                />
-                <span>Pencil Booking</span>
+                <input type="radio" name="bookingStatus" value="pencil" checked={formData.bookingStatus === 'pencil'} onChange={handleInputChange} className="radio-input" />
+                <span>Pencil</span>
               </label>
               <label className="radio-label">
-                <input
-                  type="radio"
-                  name="bookingStatus"
-                  value="confirmed"
-                  checked={formData.bookingStatus === 'confirmed'}
-                  onChange={handleInputChange}
-                  className="radio-input"
-                />
-                <span>Confirmed Booking</span>
+                <input type="radio" name="bookingStatus" value="confirmed" checked={formData.bookingStatus === 'confirmed'} onChange={handleInputChange} className="radio-input" />
+                <span>Confirmed</span>
               </label>
             </div>
           </div>
         </div>
-        
-        <div>
+        <div> {/* Right Column */}
           <label className="form-label">Select Date Range</label>
           <div className="date-range-wrapper">
-            <DateRangePicker
-              ranges={[dateRange]}
-              onChange={handleDateRangeChange}
-              minDate={new Date()}
-              rangeColors={["#4a6fa5"]}
-            />
+            <DateRangePicker ranges={[dateRange]} onChange={handleDateRangeChange} minDate={new Date()} rangeColors={["#4a6fa5"]} />
           </div>
-          
           <div className="time-selection">
             <div className="form-group">
               <label className="form-label">Check-in Time</label>
-              <select
-                name="checkInTime"
-                value={formData.checkInTime}
-                onChange={handleInputChange}
-                className="form-select"
-              >
-                {timeOptions.map(time => (
-                  <option key={`checkin-${time}`} value={time}>
-                    {time}
-                  </option>
-                ))}
+              <select name="checkInTime" value={formData.checkInTime} onChange={handleInputChange} className="form-select">
+                {timeOptions.map(time => <option key={`checkin-${time}`} value={time}>{time}</option>)}
               </select>
             </div>
-            
             <div className="form-group">
               <label className="form-label">Check-out Time</label>
-              <select
-                name="checkOutTime"
-                value={formData.checkOutTime}
-                onChange={handleInputChange}
-                className="form-select"
-              >
-                {timeOptions.map(time => (
-                  <option key={`checkout-${time}`} value={time}>
-                    {time}
-                  </option>
-                ))}
+              <select name="checkOutTime" value={formData.checkOutTime} onChange={handleInputChange} className="form-select">
+                {timeOptions.map(time => <option key={`checkout-${time}`} value={time}>{time}</option>)}
               </select>
             </div>
           </div>
-          
           <div className="date-info">
-            <p>
-              <span className="date-info-label">Check-in:</span> {dateRange.startDate.toLocaleDateString()} at {formData.checkInTime}
-            </p>
-            <p>
-              <span className="date-info-label">Check-out:</span> {dateRange.endDate.toLocaleDateString()} at {formData.checkOutTime}
-            </p>
-            <p>
-              <span className="date-info-label">Duration:</span> {calculateDuration()} days
-            </p>
+            {dateRange.startDate && dateRange.endDate && (
+                <>
+                    <p><span className="date-info-label">Check-in:</span> {new Date(dateRange.startDate).toLocaleDateString()} at {formData.checkInTime}</p>
+                    <p><span className="date-info-label">Check-out:</span> {new Date(dateRange.endDate).toLocaleDateString()} at {formData.checkOutTime}</p>
+                    <p><span className="date-info-label">Duration:</span> {calculateDuration()} days</p>
+                </>
+            )}
           </div>
         </div>
       </div>
-      
       <div className="button-group">
-        <button
-          onClick={checkAvailability}
-          disabled={isChecking}
-          className={`btn ${isChecking ? 'btn-disabled' : 'btn-primary'}`}
-        >
-          {isChecking ? (
-            <>
-              <div className="spinner"></div>
-              Checking...
-            </>
-          ) : "Check Availability"}
+        <button onClick={handleCheckAvailability} disabled={isChecking} className={`btn ${isChecking ? 'btn-disabled' : 'btn-primary'}`}>
+          {isChecking ? <><div className="spinner"></div> Checking...</> : "Check Availability"}
         </button>
-        
-        <button
-          onClick={bookRooms}
-          disabled={!availabilityResult?.available || isBooking}
-          className={`btn ${
-            availabilityResult?.available && !isBooking
-              ? 'btn-success' 
-              : 'btn-disabled'
-          }`}
-        >
-          {isBooking ? (
-            <>
-              <div className="spinner"></div>
-              Booking...
-            </>
-          ) : "Book Now"}
+        <button onClick={handleBookRooms} disabled={isChecking || isBooking} className={`btn ${isBooking ? 'btn-disabled' : 'btn-success'}`}>
+          {isBooking ? <><div className="spinner"></div> Booking...</> : "Book Now"}
         </button>
-        
-        <button
-          onClick={resetForm}
-          className="btn btn-secondary"
-        >
-          Reset
-        </button>
+        <button onClick={resetForm} className="btn btn-secondary">Reset</button>
       </div>
-      
       {availabilityResult && (
-        <div className={`result-card ${
-          availabilityResult.available ? 'result-success' : 'result-error'
-        }`}>
-          <h3 className="result-title">
-            {availabilityResult.available 
-              ? 'Rooms Available!' 
-              : 'Insufficient Rooms Available'}
-          </h3>
+        <div className={`result-card ${availabilityResult.available ? 'result-success' : 'result-error'}`}>
+          <h3 className="result-title">{availabilityResult.available ? 'Rooms Available!' : 'Insufficient Rooms'}</h3>
           <p>
             {availabilityResult.available 
               ? `${availabilityResult.requestedRooms} rooms are available for your selected period.` 
               : `Only ${availabilityResult.availableRooms} rooms available out of ${availabilityResult.requestedRooms} requested.`}
           </p>
-          <p>
-            <span className="date-info-label">Check-in:</span> {availabilityResult.startDate.toLocaleDateString()} at {availabilityResult.startDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-          </p>
-          <p>
-            <span className="date-info-label">Check-out:</span> {availabilityResult.endDate.toLocaleDateString()} at {availabilityResult.endDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-          </p>
-          
-          {/* Show detailed daily availability */}
+          <p><span className="date-info-label">Check-in:</span> {new Date(availabilityResult.startDate).toLocaleDateString()} at {availabilityResult.checkInTime}</p>
+          <p><span className="date-info-label">Check-out:</span> {new Date(availabilityResult.endDate).toLocaleDateString()} at {availabilityResult.checkOutTime}</p>
           {availabilityResult.dailyAvailability && (
             <div className="daily-availability">
-              <h4 className="daily-title">Daily Availability:</h4>
+              <h4 className="daily-title">Daily Availability During This Period:</h4>
               <div className="daily-grid">
                 {Object.entries(availabilityResult.dailyAvailability).map(([date, available]) => (
                   <div key={date} className="daily-item">
-                    <span className="daily-date">{new Date(date).toLocaleDateString()}</span>
+                    <span className="daily-date">{date}</span>
                     <span className="daily-rooms">{available} rooms</span>
                   </div>
                 ))}

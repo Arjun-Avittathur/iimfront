@@ -3,85 +3,78 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, momentLocalizer, Views } from 'react-big-calendar';
 import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-import { getBookings } from '../services/availabilityService';
+import { getConsolidatedBookingsForDisplay } from '../services/availabilityService';
+import { TOTAL_ROOMS } from '../constants'; // Import TOTAL_ROOMS
 
 const localizer = momentLocalizer(moment);
 
 const AvailabilityCalendar = ({ refreshTrigger, onDateSelect }) => {
-  const [bookings, setBookings] = useState([]);
+  const [calendarEvents, setCalendarEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState(Views.MONTH);
   const [date, setDate] = useState(new Date());
 
   useEffect(() => {
-    fetchBookings();
+    fetchAndSetCalendarEvents();
   }, [refreshTrigger]);
 
-  const fetchBookings = () => {
+  const fetchAndSetCalendarEvents = () => {
     setLoading(true);
-    
     try {
-      // Get bookings from storage
-      const storedBookings = getBookings();
-      
-      // Transform the data for the calendar
-      const calendarEvents = storedBookings.map(booking => ({
+      const displayBookings = getConsolidatedBookingsForDisplay();
+      const events = displayBookings.map(booking => ({
         id: booking.id,
-        title: `${booking.programTitle} (${booking.numberOfRooms} rooms)`,
+        title: `${booking.programTitle} (${booking.numberOfRooms} rooms) - ${booking.bookingStatus}`,
         start: new Date(booking.startDate),
         end: new Date(booking.endDate),
-        resource: booking
+        allDay: false, 
+        resource: booking 
       }));
-      
-      setBookings(calendarEvents);
+      setCalendarEvents(events);
     } catch (error) {
-      console.error('Error fetching bookings:', error);
+      console.error('Error fetching consolidated bookings for calendar:', error);
     } finally {
       setLoading(false);
     }
   };
 
   const eventStyleGetter = (event) => {
-    const isConfirmed = event.resource.bookingStatus === 'confirmed';
-    
+    const isConfirmed = event.resource.bookingStatus === 'confirmed'; 
     return {
       style: {
-        backgroundColor: isConfirmed ? '#4a6fa5' : '#9bbae7',
+        backgroundColor: isConfirmed ? '#4a6fa5' : '#ffc43d', 
         borderRadius: '4px',
-        opacity: 0.8,
-        color: 'white',
+        opacity: 0.9,
+        color: isConfirmed ? 'white' : 'black',
         border: '0',
-        display: 'block'
+        display: 'block',
+        padding: '2px 4px',
+        fontSize: '0.8em'
       }
     };
   };
   
-  const handleNavigate = (newDate) => {
-    setDate(newDate);
-  };
+  const handleNavigate = (newDate) => { setDate(newDate); };
+  const handleViewChange = (newView) => { setView(newView); };
   
-  const handleViewChange = (newView) => {
-    setView(newView);
-  };
-  
-  const handleSelectSlot = ({ start, end }) => {
-    // When user selects a date range on calendar
+  const handleSelectSlot = ({ start, end, action }) => {
     if (onDateSelect) {
-      // Adjust end date to be inclusive (end of day)
-      const adjustedEnd = new Date(end);
-      adjustedEnd.setDate(adjustedEnd.getDate() - 1);
-      
-      onDateSelect({
-        startDate: start,
-        endDate: adjustedEnd
-      });
+      let adjustedEnd = new Date(end);
+      if (action === 'select' && start.toDateString() !== end.toDateString()) {
+        adjustedEnd.setDate(adjustedEnd.getDate() -1); 
+      }
+       if (adjustedEnd < start) adjustedEnd = new Date(start); 
+
+      onDateSelect({ startDate: start, endDate: adjustedEnd, action: action });
     }
   };
 
   return (
     <div className="card calendar-card">
       <h2 className="summary-title">Room Availability Calendar</h2>
-      <p className="calendar-instructions">Click and drag to select dates for availability check</p>
+      <p className="calendar-instructions">
+        Displays confirmed bookings. Pencil bookings are shown if total daily occupancy doesn't exceed {TOTAL_ROOMS}. {/* Use imported constant */}
+      </p>
       
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '500px' }}>
@@ -90,7 +83,7 @@ const AvailabilityCalendar = ({ refreshTrigger, onDateSelect }) => {
       ) : (
         <Calendar
           localizer={localizer}
-          events={bookings}
+          events={calendarEvents}
           startAccessor="start"
           endAccessor="end"
           style={{ height: 500 }}
@@ -102,7 +95,9 @@ const AvailabilityCalendar = ({ refreshTrigger, onDateSelect }) => {
           onNavigate={handleNavigate}
           selectable
           onSelectSlot={handleSelectSlot}
-          tooltipAccessor={(event) => `${event.title}\nCheck-in: ${moment(event.start).format('MMM DD')}\nCheck-out: ${moment(event.end).format('MMM DD')}\nStatus: ${event.resource.bookingStatus}`}
+          tooltipAccessor={(event) => 
+            `${event.title}\nCheck-in: ${moment(event.start).format('MMM DD, YYYY hh:mm A')}\nCheck-out: ${moment(event.end).format('MMM DD, YYYY hh:mm A')}`
+          }
           popup
         />
       )}
