@@ -203,7 +203,7 @@ const BookingForm = ({ addToast, onBookingAdded, selectedDates }) => {
 
   return (
     <div className="card">
-      <h2 className="summary-title">Program Room Booking</h2>
+      <h2 className="summary-title">IIMC MDC Room Booking</h2>
       <div className="two-column">
         <div> {/* Left Column */}
           <div className="form-group">
