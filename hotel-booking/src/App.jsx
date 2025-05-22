@@ -81,7 +81,7 @@ function App() {
   return (
     <div className="container">
       <header className="app-header">
-        <h1 className="app-title">Program Room Booking System</h1>
+        <h1 className="app-title">IIMC MDC Room Booking System</h1>
         <p className="app-subtitle">Book rooms for your programs with real-time availability checking</p>
         <button 
           onClick={toggleAdminPanel} 
